@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 char **divide_string_in_words(char *string) {
 	int words_count = 8;
@@ -103,14 +107,18 @@ char **divide_string_in_words(char *string) {
 	return words;
 }
 
-
-char **file_get_string(FILE *input_file) {
+char **get_string(FILE *input_file) {
 	int const step = 16;
 	int const words_count = 8;
 	char **words = NULL;
 	int size = step, length, position = 0;
-	char *string = (char *) malloc(step);
-	char *is_string_exists = (fgets(string+position, step, input_file));
+	char *string = (char *) malloc(step * sizeof(char));
+	int is_string_exists = (fgets(string+position, step, input_file) != NULL);
+	is_string_exists = is_string_exists && (string[0] != '\n');
+	if (!(is_string_exists)) {
+		free(words);
+		words = NULL;
+	}
 	while (is_string_exists){
 		length = strlen(string);
 		if (string[length-1] != '\n'){
@@ -122,55 +130,92 @@ char **file_get_string(FILE *input_file) {
 			words = divide_string_in_words(string);
 			return words;
 		}
-		is_string_exists = fgets(string+position, step, input_file);
+		is_string_exists = (NULL != fgets(string+position, step, input_file));
 	}
 	free(string);
 	return NULL;
 }
 
-char **keys_get_string(void) {
-	int const step = 16;
-	int const words_count = 8;
-	char **words = NULL;
-	int size = step, length, position = 0;
-	char *string = (char *) malloc(step);
-	char *is_string_exists = (fgets(string+position, step, stdin));
-	while (is_string_exists){
-		length = strlen(string);
-		if (string[length-1] != '\n'){
-			position = length;
-			size += step;
-			string = realloc(string, size);
-		} else {
-			string[length-1] = '\0';
-			words = divide_string_in_words(string);
-			free(string);
-			return words;
+int change_directory(char **words) {
+	int is_nothing_after_cd = !(words[1]);
+	if (is_nothing_after_cd) {
+		if (chdir(getenv("HOME")) == 0) {
+			printf("Got home\n");
+			return 0;
 		}
-		is_string_exists = fgets(string+position, step, stdin);
 	}
-	free(string);
-	return NULL;
+	int is_only_one_parameter = !(words[2]);
+	if (is_only_one_parameter) {
+		if (chdir(words[1]) == 0) {
+			printf("Directory changed\n");
+			return 0;
+		}
+	}
+	//Если неправильное количество параметров
+	return 1;
+}
+
+int do_command(char **words) {
+	int is_first_cd = (strcmp(words[0], "cd") == 0);
+	if (is_first_cd) {
+		if (change_directory(words) == 0){
+		} else {
+			printf("Change directory error\n");
+		}
+	} else {	
+		if (fork() == 0) {
+			char *path = words[0];
+			execvp(path, words);
+			printf("Execution error\n");
+			exit(1);
+		}
+		wait(NULL);
+	}
+	return 0;
+}
+
+void do_all(FILE *input_file){
+	char **words;
+	char **is_input_exists = (words = get_string(input_file));
+	if (!(words)) {
+		printf("No input\n");
+		return;
+	}
+	while (1){
+		if (is_input_exists) {
+			int length = 0;
+			while (words[length])
+				length++;
+			do_command(words);
+			for (int i = 0; i < length; i++) {
+				free(words[i]);
+				words[i] = NULL;
+			}
+			free(words);
+			words = NULL;
+			is_input_exists = (words = get_string(input_file));
+		} else {
+			break;
+		}
+	}
+	free(words);
+	return;
 }
 
 int main(int argc, char const *argv[])
 {
-	FILE *input_file = fopen("input.txt", "r");
-	char **words;
-	char **is_input_exists = (words = keys_get_string());
-	while (is_input_exists){
-		int length = 0;
-		while (words[length])
-			length++;
-		for (int i = 0; i < length; i++) {
-			printf("%s\n", words[i]);
-			free(words[i]);
-			words[i] = NULL;
+	FILE *input_file;
+	if (argc == 2) {
+		char const *filename = argv[1];
+		if (input_file = fopen(filename, "r")) {
+			do_all(input_file);	
+		} else {
+			printf("%s: this file doesn't exist\n", filename);
+			return 1;
 		}
-		free(words);
-		words = NULL;
-		is_input_exists = (words = keys_get_string());
+	} else {
+		do_all(stdin);
 	}
-	free(words);
+	
 	return 0;
 }
