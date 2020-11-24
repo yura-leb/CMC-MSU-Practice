@@ -155,6 +155,48 @@ int change_directory(char **words) {
 	return 1;
 }
 
+int conveyor(char **parameters) {
+	int length = 0, fd[2], process_id;
+	while (parameters[length])
+		length++;
+	char **process = malloc(length * sizeof(char *));
+	int k = 0;
+	int j = 0;
+	while (j < length) {
+		while ((j < length) && (strcmp(parameters[j], "|") != 0)) {
+			process[k] = parameters[j];
+			k++;
+			j++;
+		}
+		pipe(fd);
+		switch (process_id = fork()) {
+			case -1:
+				printf("Fork conveyor error\n");
+				exit(1);
+			case 0:
+				if (j < (length - 1))
+					dup2(fd[1], 1);
+				close(fd[0]);
+				close(fd[1]);
+				execvp(process[0], process);
+				printf("Execvp conveyor error\n");
+				exit(1);
+		}
+		dup2(fd[0], 0);
+		close(fd[0]);
+		close(fd[1]);
+		for (int i = 0; i < k; i++) {
+			process[i] = NULL;
+		}
+		k = 0;
+		j++;
+	}
+	while ((process_id = wait(NULL)) != -1)
+		printf("Process %d finished\n", process_id);
+	free(process);
+	return 0;
+}
+
 int do_command(char **words) {
 	int is_first_cd = (strcmp(words[0], "cd") == 0);
 	if (is_first_cd) {
@@ -162,14 +204,69 @@ int do_command(char **words) {
 		} else {
 			printf("Change directory error\n");
 		}
-	} else {	
-		if (fork() == 0) {
-			char *path = words[0];
-			execvp(path, words);
-			printf("Execution error\n");
-			exit(1);
+	} else {
+		int i = 0, k = 0;
+		int words_count = 0;
+		while (words[words_count])
+			words_count++;
+		char **parameters = malloc(words_count * sizeof(char *));
+		i = 0;
+		int fd[2];
+		int process_id;
+		switch (process_id = fork()) {
+			case -1:
+				printf("Fork error\n");
+				exit(1);
+			case 0:
+				while (i <= words_count) {
+					int is_not_end_of_conveyor = (i < words_count) && (strcmp(words[i], ";") != 0);
+					if (is_not_end_of_conveyor) {
+						if (strcmp(words[i], ">") == 0) {
+							int file = open(words[i + 1], O_WRONLY | O_TRUNC | O_CREAT, 0644);
+							if (file == -1) {
+								printf("File error\n");
+								exit(1);
+							}
+							i++;
+							dup2(file, 1);
+							close(file);
+						} else if (strcmp(words[i], ">>") == 0) {
+							int file = open(words[i + 1], O_WRONLY | O_APPEND | O_CREAT, 0644);
+							if (file == -1) {
+								printf("File error\n");
+								exit(1);
+							}
+							dup2(file, 1);
+							close(file);
+							i++;
+						} else if (strcmp(words[i], "<") == 0) {
+							int file = open(words[i + 1], O_RDONLY, 0644);
+							if (file == -1) {
+								printf("File error\n");
+								exit(1);
+							}
+							dup2(file, 0);
+							close(file);
+							i++;
+						} else 
+							parameters[k] = words[i];
+						i++;
+						k++;
+					} else {
+						if (parameters[k])
+							parameters[k] = NULL;
+						conveyor(parameters);
+						for (int j = 0; j < k + 1; j++) {
+							parameters[j] = NULL;
+						}
+						k = 0;
+						i++;
+					}
+				}
+				free(parameters);
+				exit(1);
 		}
-		wait(NULL);
+		wait(NULL);//сделано с сыновьим процессом, чтобы было проще продолжать для фоновых процессов
 	}
 	return 0;
 }
