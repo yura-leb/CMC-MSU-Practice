@@ -218,6 +218,26 @@ int do_command(char **words) {
 				printf("Fork error\n");
 				exit(1);
 			case 0:
+				if (strcmp(words[words_count - 1], "&") == 0) {
+					switch (process_id = fork()){
+						case -1:
+							printf("Fork error\n");
+							exit(1);
+						case 0:
+							words_count--;
+							free(words[words_count]);
+							words[words_count] = NULL;
+							signal(SIGINT, SIG_IGN);
+							int file = open("/dev/null", O_RDWR, 0644);
+							dup2(file, 0);
+							dup2(file, 1);
+							kill(getppid(), SIGKILL);
+							execvp(words[0], words);
+							printf("Background error");
+							exit(1);
+					}
+					wait(NULL);
+				}
 				while (i <= words_count) {
 					int is_not_end_of_conveyor = (i < words_count) && (strcmp(words[i], ";") != 0);
 					if (is_not_end_of_conveyor) {
